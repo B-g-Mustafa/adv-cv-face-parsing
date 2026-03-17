@@ -5,13 +5,18 @@ Architecture:
     4-stage encoder (DSResBlocks) → ASPP_Lite bottleneck → 4-stage decoder
     with Attention Gates on skip connections.
 
+    Auxiliary edge head: branches from the decoder to predict class boundary
+    maps. Used only during training to improve boundary-sensitive features.
+    Discarded at inference (zero overhead).
+
 Design rationale (from research):
     - Depthwise separable convolutions reduce params by ~8-9× vs standard convs
     - Attention gates filter irrelevant background on skip connections
     - ASPP provides multi-scale receptive field without deepening the network
     - Sobel edge channel (4th input) delegates edge detection to classical CV
+    - Auxiliary edge head forces boundary-aware feature learning
 """
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -22,7 +27,8 @@ from .blocks import DSResBlock, AttentionGate, ASPP_Lite, DepthwiseSeparableConv
 
 class AttentionLiteUNet(nn.Module):
     """
-    Lightweight U-Net with attention gates and depthwise separable convolutions.
+    Lightweight U-Net with attention gates, depthwise separable convolutions,
+    and optional auxiliary edge prediction head.
 
     Args:
         in_channels: Number of input channels (3 for RGB, 4 with Sobel edge).
@@ -32,6 +38,7 @@ class AttentionLiteUNet(nn.Module):
         bottleneck_channels: Channels in ASPP bottleneck.
         aspp_rates: Dilation rates for ASPP.
         dropout: Dropout probability.
+        use_edge_head: If True, adds auxiliary edge prediction head.
     """
 
     def __init__(
@@ -43,12 +50,15 @@ class AttentionLiteUNet(nn.Module):
         bottleneck_channels: int = 256,
         aspp_rates: tuple = (6, 12, 18),
         dropout: float = 0.1,
+        use_edge_head: bool = True,
     ):
         super().__init__()
         if enc_channels is None:
             enc_channels = [48, 96, 192, 256]
         if dec_channels is None:
             dec_channels = [192, 96, 48]
+
+        self.use_edge_head = use_edge_head
 
         # ---- Initial conv ----
         self.stem = nn.Sequential(
@@ -103,7 +113,26 @@ class AttentionLiteUNet(nn.Module):
         self.dropout = nn.Dropout2d(dropout)
         self.head = nn.Conv2d(dec_channels[-1], num_classes, kernel_size=1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # ---- Auxiliary Edge head (only used during training) ----
+        if use_edge_head:
+            self.edge_head = nn.Sequential(
+                nn.Conv2d(dec_channels[-1], dec_channels[-1] // 4, kernel_size=3, padding=1),
+                nn.BatchNorm2d(dec_channels[-1] // 4),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(dec_channels[-1] // 4, 1, kernel_size=1),
+            )
+
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Forward pass.
+
+        During training (self.training=True and use_edge_head=True):
+            Returns dict: {"seg": segmentation_logits, "edge": edge_logits}
+        During inference:
+            Returns: segmentation_logits tensor
+        """
         # Stem
         x0 = self.stem(x)  # (B, 32, H, W)
 
@@ -144,10 +173,18 @@ class AttentionLiteUNet(nn.Module):
         skip = self.final_att(gate=out, skip=skip)
         out = self.final_dec(torch.cat([out, skip], dim=1))
 
-        # Head
-        out = self.dropout(out)
-        out = self.head(out)
-        return out
+        # Decoder features (before classification)
+        dec_features = self.dropout(out)
+
+        # Segmentation head
+        seg_logits = self.head(dec_features)
+
+        # During training: also predict edge map
+        if self.training and self.use_edge_head:
+            edge_logits = self.edge_head(dec_features)
+            return {"seg": seg_logits, "edge": edge_logits}
+
+        return seg_logits
 
 
 def build_model(cfg: dict) -> AttentionLiteUNet:
@@ -161,4 +198,5 @@ def build_model(cfg: dict) -> AttentionLiteUNet:
         bottleneck_channels=mcfg.get("bottleneck_channels", 256),
         aspp_rates=tuple(mcfg.get("aspp_rates", [6, 12, 18])),
         dropout=mcfg.get("dropout", 0.1),
+        use_edge_head=mcfg.get("use_edge_head", True),
     )

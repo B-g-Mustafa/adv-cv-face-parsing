@@ -1,7 +1,7 @@
 """
 Loss functions for face semantic segmentation.
 
-Combined loss: weighted CE + Dice + optional Boundary loss.
+Combined loss: weighted CE + Dice + Boundary + Edge auxiliary.
 Handles 19-class imbalance via per-class weights.
 """
 import torch
@@ -12,6 +12,40 @@ from scipy.ndimage import distance_transform_edt
 from typing import Dict, Optional
 
 
+# =====================================================================
+# Edge map generation from ground truth masks
+# =====================================================================
+def compute_edge_maps(masks: torch.Tensor) -> torch.Tensor:
+    """
+    Compute binary edge maps from class-index masks.
+
+    A pixel is on an edge if any of its 4-connected neighbors has a
+    different class label. This produces 1-pixel-wide boundaries between
+    all class regions.
+
+    Args:
+        masks: (B, H, W) integer class labels.
+
+    Returns:
+        (B, 1, H, W) float32 edge maps (1.0 = edge, 0.0 = non-edge).
+    """
+    masks_float = masks.float().unsqueeze(1)  # (B, 1, H, W)
+
+    # Shift in 4 directions and compare
+    pad = F.pad(masks_float, (1, 1, 1, 1), mode="replicate")
+    # up, down, left, right
+    diff_u = (masks_float != pad[:, :, :-2, 1:-1]).float()
+    diff_d = (masks_float != pad[:, :, 2:, 1:-1]).float()
+    diff_l = (masks_float != pad[:, :, 1:-1, :-2]).float()
+    diff_r = (masks_float != pad[:, :, 1:-1, 2:]).float()
+
+    edges = (diff_u + diff_d + diff_l + diff_r).clamp(0, 1)
+    return edges  # (B, 1, H, W)
+
+
+# =====================================================================
+# Loss components
+# =====================================================================
 class DiceLoss(nn.Module):
     """Soft Dice loss for multi-class segmentation."""
 
@@ -80,9 +114,38 @@ class BoundaryLoss(nn.Module):
         return (probs * dist_maps).mean()
 
 
+class EdgeLoss(nn.Module):
+    """
+    Binary cross-entropy loss on predicted edge maps vs GT edges.
+
+    Uses class-balanced weighting: edge pixels are rare (~5% of image),
+    so they get upweighted to avoid the model predicting all-zeros.
+    """
+
+    def __init__(self, pos_weight: float = 5.0):
+        super().__init__()
+        self.pos_weight = torch.tensor([pos_weight])
+
+    def forward(
+        self, edge_logits: torch.Tensor, edge_targets: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Args:
+            edge_logits: (B, 1, H, W) raw edge predictions.
+            edge_targets: (B, 1, H, W) binary edge ground truth.
+        """
+        pw = self.pos_weight.to(edge_logits.device)
+        return F.binary_cross_entropy_with_logits(
+            edge_logits, edge_targets, pos_weight=pw
+        )
+
+
+# =====================================================================
+# Combined loss
+# =====================================================================
 class CombinedLoss(nn.Module):
     """
-    Combined loss: α·CE + β·Dice + γ·Boundary.
+    Combined loss: α·CE + β·Dice + γ·Boundary + δ·Edge.
 
     Args:
         num_classes: Number of segmentation classes.
@@ -90,6 +153,7 @@ class CombinedLoss(nn.Module):
         ce_weight: Coefficient for cross-entropy term.
         dice_weight: Coefficient for Dice term.
         boundary_weight: Coefficient for boundary term (0 to disable).
+        edge_weight: Coefficient for edge auxiliary term (0 to disable).
         label_smoothing: Label smoothing for CE loss.
     """
 
@@ -100,22 +164,41 @@ class CombinedLoss(nn.Module):
         ce_weight: float = 1.0,
         dice_weight: float = 1.0,
         boundary_weight: float = 0.5,
+        edge_weight: float = 1.0,
         label_smoothing: float = 0.05,
     ):
         super().__init__()
         self.ce_weight = ce_weight
         self.dice_weight = dice_weight
         self.boundary_weight = boundary_weight
+        self.edge_weight = edge_weight
 
         self.ce_loss = nn.CrossEntropyLoss(
             weight=class_weights, label_smoothing=label_smoothing
         )
         self.dice_loss = DiceLoss(num_classes=num_classes)
         self.boundary_loss = BoundaryLoss(num_classes=num_classes) if boundary_weight > 0 else None
+        self.edge_loss = EdgeLoss(pos_weight=5.0) if edge_weight > 0 else None
 
     def forward(
-        self, logits: torch.Tensor, targets: torch.Tensor
+        self,
+        model_output: Dict[str, torch.Tensor],
+        targets: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            model_output: dict with 'seg' (B, C, H, W) and optional 'edge' (B, 1, H, W),
+                          OR just a tensor (B, C, H, W) during inference.
+            targets: (B, H, W) integer class labels.
+        """
+        # Handle both dict (training) and tensor (inference) outputs
+        if isinstance(model_output, dict):
+            logits = model_output["seg"]
+            edge_logits = model_output.get("edge", None)
+        else:
+            logits = model_output
+            edge_logits = None
+
         losses = {}
         total = torch.tensor(0.0, device=logits.device)
 
@@ -131,6 +214,17 @@ class CombinedLoss(nn.Module):
             boundary = self.boundary_loss(logits, targets)
             losses["boundary"] = boundary
             total = total + self.boundary_weight * boundary
+
+        # Edge auxiliary loss
+        if (
+            self.edge_loss is not None
+            and self.edge_weight > 0
+            and edge_logits is not None
+        ):
+            edge_targets = compute_edge_maps(targets)
+            edge = self.edge_loss(edge_logits, edge_targets)
+            losses["edge"] = edge
+            total = total + self.edge_weight * edge
 
         losses["total"] = total
         return losses
