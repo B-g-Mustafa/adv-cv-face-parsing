@@ -1,0 +1,136 @@
+# ============================================================
+# Face Semantic Parsing — Master Configuration
+# ============================================================
+
+# ----- Paths -----
+data:
+  train_images: "data/train/images"
+  train_masks:  "data/train/masks"
+  val_images:   "data/val/images"
+  val_masks:    "data/val/masks"
+  test_images:  "data/test/images"
+  output_dir:   "outputs"
+  checkpoint_dir: "outputs/checkpoints"
+  log_dir:      "outputs/logs"
+
+# ----- Image / Task -----
+image_size: 512
+num_classes: 19
+class_names:
+  - background
+  - skin
+  - l_brow
+  - r_brow
+  - l_eye
+  - r_eye
+  - eye_g        # eyeglasses
+  - l_ear
+  - r_ear
+  - ear_r        # earring
+  - nose
+  - mouth
+  - u_lip
+  - l_lip
+  - neck
+  - neck_l       # necklace
+  - cloth
+  - hair
+  - hat
+
+# ----- Preprocessing -----
+preprocessing:
+  use_clahe: true
+  clahe_clip_limit: 2.0
+  clahe_grid_size: 8
+  use_bilateral: true
+  bilateral_d: 5
+  bilateral_sigma_color: 50
+  bilateral_sigma_space: 50
+  use_sobel_edge: true          # append Sobel edge as 4th channel
+  normalize_mean: [0.485, 0.456, 0.406]
+  normalize_std:  [0.229, 0.224, 0.225]
+
+# ----- Augmentation -----
+augmentation:
+  enabled: true
+  horizontal_flip_p: 0.5
+  rotate_limit: 15
+  scale_limit: 0.1
+  shift_limit: 0.05
+  brightness_limit: 0.2
+  contrast_limit: 0.2
+  hue_shift_limit: 10
+  gaussian_noise_var_limit: 10.0
+  gaussian_blur_limit: 3
+  coarse_dropout_max_holes: 8
+  coarse_dropout_max_height: 32
+  coarse_dropout_max_width: 32
+  elastic_alpha: 30
+  elastic_sigma: 5
+
+# ----- Model -----
+model:
+  name: "AttentionLiteUNet"
+  in_channels: 4             # 3 RGB + 1 Sobel edge (set to 3 if sobel disabled)
+  num_classes: 19
+  encoder_channels: [32, 64, 128, 256]
+  decoder_channels: [128, 64, 32]
+  bottleneck_channels: 256
+  aspp_rates: [6, 12, 18]
+  dropout: 0.1
+
+# ----- Training -----
+training:
+  epochs: 200
+  batch_size: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "adamw"
+  scheduler: "cosine_warm_restarts"
+  T_0: 50                    # cosine restart period
+  T_mult: 1
+  eta_min: 0.000001
+  grad_clip_max_norm: 1.0
+  use_amp: true               # mixed precision
+  early_stopping_patience: 30
+  num_workers: 4
+  pin_memory: true
+
+# ----- Loss -----
+loss:
+  ce_weight: 1.0
+  dice_weight: 1.0
+  boundary_weight: 0.5
+  label_smoothing: 0.05
+  use_class_weights: true      # auto-compute from train set frequencies
+
+# ----- Post-processing -----
+postprocessing:
+  use_morphological: true
+  morph_kernel_size: 3
+  morph_iterations: 1
+  use_hole_filling: true
+  use_connected_components: true
+  cc_min_area: 100             # remove components smaller than this
+  use_crf: false               # CRF is slow; enable for final submission
+  crf_iterations: 5
+  crf_bilateral_sxy: 60
+  crf_bilateral_srgb: 10
+  crf_bilateral_compat: 5
+  crf_gaussian_sxy: 3
+  crf_gaussian_compat: 3
+
+# ----- Test-Time Augmentation -----
+tta:
+  enabled: true
+  horizontal_flip: true
+  rotations: [-5, 0, 5]        # degrees
+  scales: [1.0]
+
+# ----- Checkpoint Ensembling -----
+ensemble:
+  enabled: true
+  top_k: 3                     # average top-K checkpoints by val F1
+
+# ----- Reproducibility -----
+seed: 42
