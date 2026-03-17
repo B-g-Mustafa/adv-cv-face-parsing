@@ -80,14 +80,18 @@ def save_checkpoint(
     path: str,
     scheduler: Optional[Any] = None,
     scaler: Optional[Any] = None,
+    best_f1: float = 0.0,
+    epochs_no_improve: int = 0,
 ) -> None:
-    """Save a training checkpoint."""
+    """Save a training checkpoint with full resume state."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     state = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "metrics": metrics,
+        "best_f1": best_f1,
+        "epochs_no_improve": epochs_no_improve,
     }
     if scheduler is not None:
         state["scheduler_state_dict"] = scheduler.state_dict()

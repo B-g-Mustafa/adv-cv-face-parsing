@@ -2,11 +2,14 @@
 train.py — Main training entry point.
 
 Usage:
-    python train.py                        # use default config
-    python train.py --config configs/custom.yaml
+    python train.py                                    # train from scratch
+    python train.py --config configs/custom.yaml       # custom config
+    python train.py --resume                           # resume from last.pth
+    python train.py --resume outputs/checkpoints/epoch_050.pth  # resume from specific checkpoint
 """
 import argparse
 import sys
+from pathlib import Path
 
 import torch
 
@@ -22,6 +25,10 @@ def main():
     parser.add_argument(
         "--config", type=str, default="configs/default.yaml",
         help="Path to YAML config file.",
+    )
+    parser.add_argument(
+        "--resume", type=str, nargs="?", const="auto", default=None,
+        help="Resume training. Pass a checkpoint path, or just --resume to auto-load last.pth.",
     )
     args = parser.parse_args()
 
@@ -60,8 +67,27 @@ def main():
         label_smoothing=loss_cfg.get("label_smoothing", 0.05),
     )
 
-    # Train
+    # Build trainer
     trainer = Trainer(model, loss_fn, device, cfg)
+
+    # Resume from checkpoint if requested
+    if args.resume is not None:
+        if args.resume == "auto":
+            # Auto-detect: try last.pth
+            ckpt_dir = Path(cfg["data"].get("checkpoint_dir", "outputs/checkpoints"))
+            last_ckpt = ckpt_dir / "last.pth"
+            if last_ckpt.exists():
+                trainer.resume(str(last_ckpt))
+            else:
+                print(f"No last.pth found in {ckpt_dir}. Starting from scratch.")
+        else:
+            # Explicit path
+            if not Path(args.resume).exists():
+                print(f"ERROR: Checkpoint not found: {args.resume}")
+                sys.exit(1)
+            trainer.resume(args.resume)
+
+    # Train
     trainer.fit(train_loader, val_loader)
 
     print("\nTraining complete!")

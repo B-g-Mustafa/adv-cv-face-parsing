@@ -1,5 +1,8 @@
 """
 Training engine: train loop, validation, checkpointing, early stopping, logging.
+
+Supports full resume from checkpoint — restores model, optimizer, scheduler,
+scaler, epoch counter, best F1, and early stopping state.
 """
 import csv
 import os
@@ -13,8 +16,8 @@ import torch.nn as nn
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from evaluation.metrics import compute_metrics_batch
-from utils.helpers import save_checkpoint, ensure_dir
+from evaluation.metrics import compute_metrics_batch, compute_multiclass_fscore
+from utils.helpers import save_checkpoint, load_checkpoint, ensure_dir
 
 
 class Trainer:
@@ -26,6 +29,7 @@ class Trainer:
     - Best + periodic checkpointing
     - Early stopping
     - CSV logging
+    - Full resume from any checkpoint
     """
 
     def __init__(
@@ -34,7 +38,6 @@ class Trainer:
         loss_fn: nn.Module,
         device: torch.device,
         cfg: Dict[str, Any],
-        class_weights: Optional[torch.Tensor] = None,
     ):
         self.model = model.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -69,6 +72,7 @@ class Trainer:
         # Tracking
         self.best_f1 = 0.0
         self.epochs_no_improve = 0
+        self.start_epoch = 1
         self.history: List[Dict[str, float]] = []
 
         # Dirs
@@ -76,6 +80,54 @@ class Trainer:
         self.log_dir = ensure_dir(cfg["data"].get("log_dir", "outputs/logs"))
 
         self.num_classes = cfg.get("num_classes", 19)
+        self.ckpt_every = tcfg.get("checkpoint_every", 10)
+
+    # ---------------------------------------------------------
+    def resume(self, checkpoint_path: str) -> None:
+        """
+        Resume training from a checkpoint.
+
+        Restores: model weights, optimizer state, scheduler state,
+        AMP scaler state, epoch number, best F1, early stopping counter.
+        """
+        print(f"\n{'='*60}")
+        print(f"  Resuming from: {checkpoint_path}")
+        print(f"{'='*60}")
+
+        ckpt = load_checkpoint(
+            checkpoint_path,
+            self.model,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            scaler=self.scaler,
+            device=self.device,
+        )
+
+        self.start_epoch = ckpt.get("epoch", 0) + 1
+        self.best_f1 = ckpt.get("best_f1", ckpt.get("metrics", {}).get("f1", 0.0))
+        self.epochs_no_improve = ckpt.get("epochs_no_improve", 0)
+
+        print(f"  Restored epoch:            {ckpt.get('epoch', '?')}")
+        print(f"  Resuming from epoch:       {self.start_epoch}")
+        print(f"  Best F1 so far:            {self.best_f1:.4f}")
+        print(f"  Epochs without improve:    {self.epochs_no_improve}")
+        print(f"  Learning rate:             {self.optimizer.param_groups[0]['lr']:.2e}")
+        print(f"{'='*60}\n")
+
+    # ---------------------------------------------------------
+    def _save(self, epoch: int, metrics: Dict[str, float], filename: str) -> None:
+        """Save checkpoint with full resume state."""
+        save_checkpoint(
+            self.model,
+            self.optimizer,
+            epoch,
+            metrics,
+            str(self.ckpt_dir / filename),
+            self.scheduler,
+            self.scaler,
+            best_f1=self.best_f1,
+            epochs_no_improve=self.epochs_no_improve,
+        )
 
     # ---------------------------------------------------------
     def train_one_epoch(
@@ -152,17 +204,22 @@ class Trainer:
         train_loader: torch.utils.data.DataLoader,
         val_loader: torch.utils.data.DataLoader,
     ) -> List[Dict[str, float]]:
-        """Run full training loop."""
+        """Run full training loop (supports resume via self.start_epoch)."""
         csv_path = self.log_dir / "training_log.csv"
-        csv_file = open(csv_path, "w", newline="")
+
+        # If resuming and CSV exists, append; otherwise write fresh
+        csv_mode = "a" if self.start_epoch > 1 and csv_path.exists() else "w"
+        csv_file = open(csv_path, csv_mode, newline="")
         csv_writer = None
 
         print(f"\n{'='*60}")
-        print(f"Training for {self.epochs} epochs")
+        print(f"Training epochs {self.start_epoch}–{self.epochs}")
         print(f"Device: {self.device} | AMP: {self.use_amp}")
+        if self.start_epoch > 1:
+            print(f"Resumed | Best F1: {self.best_f1:.4f} | LR: {self.optimizer.param_groups[0]['lr']:.2e}")
         print(f"{'='*60}\n")
 
-        for epoch in range(1, self.epochs + 1):
+        for epoch in range(self.start_epoch, self.epochs + 1):
             t0 = time.time()
             train_loss = self.train_one_epoch(train_loader, epoch)
             val_loss, val_metrics = self.validate(val_loader)
@@ -177,6 +234,7 @@ class Trainer:
                 "lr": lr,
                 "train_loss": train_loss["total"],
                 "val_loss": val_loss["total"],
+                "val_submission_f1": val_metrics["submission_f1"],
                 "val_f1": val_metrics["mean_f1"],
                 "val_iou": val_metrics["mean_iou"],
                 "val_dice": val_metrics["mean_dice"],
@@ -187,8 +245,10 @@ class Trainer:
 
             # CSV
             if csv_writer is None:
-                csv_writer = csv.DictWriter(csv_file, fieldnames=record.keys())
-                csv_writer.writeheader()
+                fieldnames = list(record.keys())
+                csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                if csv_mode == "w":
+                    csv_writer.writeheader()
             csv_writer.writerow({k: f"{v:.6f}" if isinstance(v, float) else v for k, v in record.items()})
             csv_file.flush()
 
@@ -198,6 +258,7 @@ class Trainer:
                 f"lr={lr:.2e} | "
                 f"train_loss={train_loss['total']:.4f} | "
                 f"val_loss={val_loss['total']:.4f} | "
+                f"SubF1={val_metrics['submission_f1']:.4f} | "
                 f"F1={val_metrics['mean_f1']:.4f} | "
                 f"IoU={val_metrics['mean_iou']:.4f} | "
                 f"Dice={val_metrics['mean_dice']:.4f} | "
@@ -205,35 +266,24 @@ class Trainer:
                 f"{elapsed:.1f}s"
             )
 
-            # Checkpoint
-            ckpt_metrics = {"f1": val_metrics["mean_f1"], "iou": val_metrics["mean_iou"]}
-            # Save periodic checkpoint
-            if epoch % 10 == 0:
-                save_checkpoint(
-                    self.model, self.optimizer, epoch, ckpt_metrics,
-                    str(self.ckpt_dir / f"epoch_{epoch:03d}.pth"),
-                    self.scheduler, self.scaler,
-                )
+            # Checkpoint metrics stored in checkpoint file
+            ckpt_metrics = {"f1": val_metrics["submission_f1"], "iou": val_metrics["mean_iou"]}
 
-            # Save best
-            if val_metrics["mean_f1"] > self.best_f1:
-                self.best_f1 = val_metrics["mean_f1"]
+            # Save periodic checkpoint
+            if epoch % self.ckpt_every == 0:
+                self._save(epoch, ckpt_metrics, f"epoch_{epoch:03d}.pth")
+
+            # Save best (based on submission F1 — the real grading metric)
+            if val_metrics["submission_f1"] > self.best_f1:
+                self.best_f1 = val_metrics["submission_f1"]
                 self.epochs_no_improve = 0
-                save_checkpoint(
-                    self.model, self.optimizer, epoch, ckpt_metrics,
-                    str(self.ckpt_dir / "best.pth"),
-                    self.scheduler, self.scaler,
-                )
+                self._save(epoch, ckpt_metrics, "best.pth")
                 print(f"  ↑ New best F1: {self.best_f1:.4f} — saved best.pth")
             else:
                 self.epochs_no_improve += 1
 
-            # Save last
-            save_checkpoint(
-                self.model, self.optimizer, epoch, ckpt_metrics,
-                str(self.ckpt_dir / "last.pth"),
-                self.scheduler, self.scaler,
-            )
+            # Save last (always — this is what you resume from)
+            self._save(epoch, ckpt_metrics, "last.pth")
 
             # Early stopping
             if self.epochs_no_improve >= self.patience:
