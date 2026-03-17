@@ -2,7 +2,8 @@
 Reusable building blocks for the lightweight face segmentation model.
 
 - DepthwiseSeparableConv: factored convolution (depthwise + pointwise)
-- DSResBlock: depthwise separable residual block
+- SqueezeExcitation: channel attention (recalibrate feature importance)
+- DSResBlock: depthwise separable residual block + SE attention
 - AttentionGate: additive attention on skip connections
 - ASPP_Lite: lightweight atrous spatial pyramid pooling
 """
@@ -49,15 +50,40 @@ class DepthwiseSeparableConv(nn.Module):
         return x
 
 
+class SqueezeExcitation(nn.Module):
+    """
+    Squeeze-and-Excitation channel attention.
+
+    Learns per-channel importance weights via global pooling → FC → ReLU → FC → Sigmoid.
+    Very parameter-efficient: only 2×C×(C//reduction) params, but provides
+    significant accuracy gains by letting the network recalibrate which
+    feature channels are most discriminative.
+    """
+
+    def __init__(self, channels: int, reduction: int = 4):
+        super().__init__()
+        mid = max(channels // reduction, 8)
+        self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, mid, 1, bias=False),
+            nn.ReLU6(inplace=True),
+            nn.Conv2d(mid, channels, 1, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.fc(x)
+
+
 class DSResBlock(nn.Module):
     """
-    Depthwise Separable Residual Block.
+    Depthwise Separable Residual Block with SE channel attention.
 
-    Two DS-Convs with a residual skip. If channel dims differ,
-    a 1×1 projection aligns them.
+    Two DS-Convs with a residual skip + Squeeze-and-Excitation.
+    If channel dims differ, a 1×1 projection aligns them.
     """
 
-    def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
+    def __init__(self, in_channels: int, out_channels: int, stride: int = 1, se_reduction: int = 4):
         super().__init__()
         self.conv1 = DepthwiseSeparableConv(
             in_channels, out_channels, stride=stride, padding=1
@@ -74,6 +100,8 @@ class DSResBlock(nn.Module):
             nn.Conv2d(out_channels, out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels),
         )
+        # Squeeze-and-Excitation channel attention
+        self.se = SqueezeExcitation(out_channels, reduction=se_reduction)
         # Residual projection if needed
         self.skip = nn.Identity()
         if in_channels != out_channels or stride != 1:
@@ -87,6 +115,7 @@ class DSResBlock(nn.Module):
         identity = self.skip(x)
         out = self.conv1(x)
         out = self.conv2(out)
+        out = self.se(out)
         out = self.act(out + identity)
         return out
 

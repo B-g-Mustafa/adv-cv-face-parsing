@@ -46,9 +46,9 @@ class AttentionLiteUNet(nn.Module):
     ):
         super().__init__()
         if enc_channels is None:
-            enc_channels = [32, 64, 128, 256]
+            enc_channels = [48, 96, 192, 256]
         if dec_channels is None:
-            dec_channels = [128, 64, 32]
+            dec_channels = [192, 96, 48]
 
         # ---- Initial conv ----
         self.stem = nn.Sequential(
@@ -156,8 +156,8 @@ def build_model(cfg: dict) -> AttentionLiteUNet:
     return AttentionLiteUNet(
         in_channels=mcfg.get("in_channels", 4),
         num_classes=mcfg.get("num_classes", 19),
-        enc_channels=mcfg.get("encoder_channels", [32, 64, 128, 256]),
-        dec_channels=mcfg.get("decoder_channels", [128, 64, 32]),
+        enc_channels=mcfg.get("encoder_channels", [48, 96, 192, 256]),
+        dec_channels=mcfg.get("decoder_channels", [192, 96, 48]),
         bottleneck_channels=mcfg.get("bottleneck_channels", 256),
         aspp_rates=tuple(mcfg.get("aspp_rates", [6, 12, 18])),
         dropout=mcfg.get("dropout", 0.1),
