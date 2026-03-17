@@ -18,10 +18,10 @@ def get_train_augmentation(cfg: Optional[Dict[str, Any]] = None) -> A.Compose:
 
     transforms = [
         A.HorizontalFlip(p=cfg.get("horizontal_flip_p", 0.5)),
-        A.ShiftScaleRotate(
-            shift_limit=cfg.get("shift_limit", 0.05),
-            scale_limit=cfg.get("scale_limit", 0.1),
-            rotate_limit=cfg.get("rotate_limit", 15),
+        A.Affine(
+            translate_percent=cfg.get("shift_limit", 0.05),
+            scale=(1 - cfg.get("scale_limit", 0.1), 1 + cfg.get("scale_limit", 0.1)),
+            rotate=(-cfg.get("rotate_limit", 15), cfg.get("rotate_limit", 15)),
             border_mode=0,  # constant border
             p=0.5,
         ),
@@ -37,7 +37,7 @@ def get_train_augmentation(cfg: Optional[Dict[str, Any]] = None) -> A.Compose:
             p=0.3,
         ),
         A.GaussNoise(
-            var_limit=(0, cfg.get("gaussian_noise_var_limit", 10.0)),
+            std_range=(0, cfg.get("gaussian_noise_std", 0.05)),
             p=0.2,
         ),
         A.GaussianBlur(
@@ -45,11 +45,9 @@ def get_train_augmentation(cfg: Optional[Dict[str, Any]] = None) -> A.Compose:
             p=0.2,
         ),
         A.CoarseDropout(
-            max_holes=cfg.get("coarse_dropout_max_holes", 8),
-            max_height=cfg.get("coarse_dropout_max_height", 32),
-            max_width=cfg.get("coarse_dropout_max_width", 32),
-            fill_value=0,
-            mask_fill_value=0,  # background class
+            num_holes_range=(1, cfg.get("coarse_dropout_max_holes", 8)),
+            hole_height_range=(8, cfg.get("coarse_dropout_max_height", 32)),
+            hole_width_range=(8, cfg.get("coarse_dropout_max_width", 32)),
             p=0.3,
         ),
         A.ElasticTransform(

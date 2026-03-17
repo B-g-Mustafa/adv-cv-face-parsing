@@ -133,6 +133,7 @@ class FaceParsingDataset(Dataset):
         masks_dir: str,
         preprocessor: FacePreprocessor,
         augmentation: Optional[Any] = None,
+        copy_paste: Optional[Any] = None,
         image_size: int = 512,
         num_classes: int = 19,
     ):
@@ -140,6 +141,7 @@ class FaceParsingDataset(Dataset):
         self.masks_dir = Path(masks_dir)
         self.preprocessor = preprocessor
         self.augmentation = augmentation
+        self.copy_paste = copy_paste
         self.image_size = image_size
         self.num_classes = num_classes
 
@@ -211,6 +213,10 @@ class FaceParsingDataset(Dataset):
 
         # Clip mask to valid class range
         mask = np.clip(mask, 0, self.num_classes - 1).astype(np.uint8)
+
+        # Copy-Paste augmentation (before geometric augmentation)
+        if self.copy_paste is not None:
+            img, mask = self.copy_paste(img, mask)
 
         # Augmentation (operates on uint8 image + mask)
         if self.augmentation is not None:
@@ -286,11 +292,29 @@ def build_dataloaders(
     train_aug = get_train_augmentation(aug_cfg)
     val_aug = get_val_augmentation()
 
+    # Copy-Paste augmentation (training only)
+    copy_paste = None
+    cp_cfg = cfg.get("copy_paste", {})
+    if cp_cfg.get("enabled", False):
+        from preprocessing.copy_paste import CopyPasteAugmentation
+        copy_paste = CopyPasteAugmentation(
+            masks_dir=cfg["data"]["train_masks"],
+            images_dir=cfg["data"]["train_images"],
+            rgb_masks=True,
+            target_classes=cp_cfg.get("target_classes", None),
+            p=cp_cfg.get("probability", 0.5),
+            max_paste_per_image=cp_cfg.get("max_paste_per_image", 3),
+            blend_sigma=cp_cfg.get("blend_sigma", 3),
+            image_size=cfg.get("image_size", 512),
+        )
+        print(f"  Copy-Paste augmentation: ON (p={cp_cfg.get('probability', 0.5)})")
+
     train_ds = FaceParsingDataset(
         images_dir=cfg["data"]["train_images"],
         masks_dir=cfg["data"]["train_masks"],
         preprocessor=preprocessor,
         augmentation=train_aug,
+        copy_paste=copy_paste,
         image_size=cfg.get("image_size", 512),
         num_classes=cfg.get("num_classes", 19),
     )

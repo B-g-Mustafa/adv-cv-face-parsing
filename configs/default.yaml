@@ -81,7 +81,7 @@ model:
 
 # ----- Training -----
 training:
-  epochs: 200
+  epochs: 100
   batch_size: 4
   learning_rate: 0.001
   weight_decay: 0.0001
@@ -93,6 +93,7 @@ training:
   grad_clip_max_norm: 1.0
   use_amp: true               # mixed precision
   early_stopping_patience: 30
+  checkpoint_every: 10        # save epoch_010.pth, epoch_020.pth, etc.
   num_workers: 4
   pin_memory: true
 
@@ -103,6 +104,25 @@ loss:
   boundary_weight: 0.5
   label_smoothing: 0.05
   use_class_weights: true      # auto-compute from train set frequencies
+
+# ----- Copy-Paste Augmentation -----
+copy_paste:
+  enabled: true
+  probability: 0.5             # 50% chance per training sample
+  max_paste_per_image: 3       # paste up to 3 rare-class regions per image
+  blend_sigma: 3               # Gaussian blur for edge feathering
+  target_classes:              # rare classes to copy-paste (by class ID)
+    - 2   # l_brow
+    - 3   # r_brow
+    - 4   # l_eye
+    - 5   # r_eye
+    - 6   # eye_g (eyeglasses)
+    - 7   # l_ear
+    - 8   # r_ear
+    - 9   # ear_r (earring)
+    - 10  # nose
+    - 12  # u_lip
+    - 13  # l_lip
 
 # ----- Post-processing -----
 postprocessing:
