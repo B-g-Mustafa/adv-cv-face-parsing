@@ -4,11 +4,11 @@
 
 # ----- Paths -----
 data:
-  train_images: "data/train/images"
-  train_masks:  "data/train/masks"
-  val_images:   "data/val/images"
-  val_masks:    "data/val/masks"
-  test_images:  "data/test/images"
+  train_images: "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/train/train_image"
+  train_masks:  "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/train/train_mask"
+  val_images:   "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/val/val_image"
+  val_masks:    "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/val/val_mask"
+  test_images:  "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/test/test_image"
   output_dir:   "outputs"
   checkpoint_dir: "outputs/checkpoints"
   log_dir:      "outputs/logs"
