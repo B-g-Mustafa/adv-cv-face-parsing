@@ -126,11 +126,11 @@ copy_paste:
 
 # ----- Post-processing -----
 postprocessing:
-  use_morphological: true
+  use_morphological: false
   morph_kernel_size: 3
   morph_iterations: 1
-  use_hole_filling: true
-  use_connected_components: true
+  use_hole_filling: false            # CRITICAL: Must be false. Face has nested topology (eyes inside skin), hole filling destroys them.
+  use_connected_components: false    # Disabled to avoid filtering valid small features
   cc_min_area: 100             # remove components smaller than this
   use_crf: false               # CRF is slow; enable for final submission
   crf_iterations: 5
