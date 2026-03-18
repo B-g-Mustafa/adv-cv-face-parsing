@@ -271,6 +271,9 @@ class FaceParsingDataset(Dataset):
             median_freq = np.median(freq[freq > 0])
             weights = median_freq / freq
 
+        # Clamp extreme weights to prevent "double-balancing" issues with Dice loss
+        weights = np.clip(weights, 0.1, 5.0)
+
         print(f"  Class weights computed. Range: [{weights.min():.4f}, {weights.max():.4f}]")
         return torch.tensor(weights, dtype=torch.float32)
 

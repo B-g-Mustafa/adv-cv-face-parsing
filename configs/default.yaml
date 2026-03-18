@@ -103,7 +103,7 @@ loss:
   dice_weight: 1.0
   boundary_weight: 0.5
   label_smoothing: 0.05
-  use_class_weights: true      # auto-compute from train set frequencies
+  use_class_weights: false     # Disabled (Dice loss gracefully handles class balance on its own)
 
 # ----- Copy-Paste Augmentation -----
 copy_paste:
