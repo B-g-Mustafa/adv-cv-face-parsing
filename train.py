@@ -6,10 +6,13 @@ Usage:
     python train.py --config configs/custom.yaml       # custom config
     python train.py --resume                           # resume from last.pth
     python train.py --resume outputs/checkpoints/epoch_050.pth  # resume from specific checkpoint
+    python train.py --wandb                            # force-enable W&B logging
+    python train.py --no-wandb                         # force-disable W&B logging
 """
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional, Any
 
 import torch
 
@@ -18,6 +21,31 @@ from datasets.face_dataset import build_dataloaders
 from models.attention_lite_unet import build_model
 from training.losses import CombinedLoss
 from training.trainer import Trainer
+
+
+def _init_wandb(cfg: dict) -> Optional[Any]:
+    """Initialize W&B run from config if enabled."""
+    wb_cfg = cfg.get("wandb", {})
+    if not wb_cfg.get("enabled", False):
+        return None
+
+    try:
+        import wandb
+    except ImportError:
+        print("ERROR: wandb is enabled in config but package is not installed.")
+        print("Install it with: pip install wandb")
+        sys.exit(1)
+
+    run = wandb.init(
+        project=wb_cfg.get("project", "face-semantic-parsing"),
+        entity=wb_cfg.get("entity", None),
+        name=wb_cfg.get("run_name", None),
+        tags=wb_cfg.get("tags", []),
+        notes=wb_cfg.get("notes", None),
+        config=cfg,
+    )
+    print(f"W&B enabled: run={run.name}")
+    return run
 
 
 def main():
@@ -30,10 +58,21 @@ def main():
         "--resume", type=str, nargs="?", const="auto", default=None,
         help="Resume training. Pass a checkpoint path, or just --resume to auto-load last.pth.",
     )
+    parser.add_argument(
+        "--wandb", dest="wandb", action="store_true",
+        help="Enable Weights & Biases logging for this run.",
+    )
+    parser.add_argument(
+        "--no-wandb", dest="wandb", action="store_false",
+        help="Disable Weights & Biases logging for this run.",
+    )
+    parser.set_defaults(wandb=None)
     args = parser.parse_args()
 
     # Load config
     cfg = load_config(args.config)
+    if args.wandb is not None:
+        cfg.setdefault("wandb", {})["enabled"] = args.wandb
     set_seed(cfg.get("seed", 42))
     device = get_device()
     print(f"Device: {device}")
@@ -68,7 +107,8 @@ def main():
     )
 
     # Build trainer
-    trainer = Trainer(model, loss_fn, device, cfg)
+    wandb_run = _init_wandb(cfg)
+    trainer = Trainer(model, loss_fn, device, cfg, wandb_run=wandb_run)
 
     # Resume from checkpoint if requested
     if args.resume is not None:
@@ -88,7 +128,11 @@ def main():
             trainer.resume(args.resume)
 
     # Train
-    trainer.fit(train_loader, val_loader)
+    try:
+        trainer.fit(train_loader, val_loader)
+    finally:
+        if wandb_run is not None:
+            wandb_run.finish()
 
     print("\nTraining complete!")
 

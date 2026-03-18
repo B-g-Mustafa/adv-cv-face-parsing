@@ -4,11 +4,11 @@
 
 # ----- Paths -----
 data:
-  train_images: "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/train/train_image"
-  train_masks:  "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/train/train_mask"
-  val_images:   "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/val/val_image"
-  val_masks:    "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/val/val_mask"
-  test_images:  "/Users/mustafa/NTU-LOCAL/ntu-course-work-practical/advcv/data/data-2/AI6126_dataset_public/test/test_image"
+  train_images: "/home/msai/birul001/advcv-celeb-face-parsing/data/split-data-1000/train/images"
+  train_masks:  "/home/msai/birul001/advcv-celeb-face-parsing/data/split-data-1000/train/masks"
+  val_images:   "/home/msai/birul001/advcv-celeb-face-parsing/data/split-data-1000/val/images"
+  val_masks:    "/home/msai/birul001/advcv-celeb-face-parsing/data/split-data-1000/val/masks"
+  test_images:  "/home/msai/birul001/advcv-celeb-face-parsing/data/split-data-1000/test/images"
   output_dir:   "outputs"
   checkpoint_dir: "outputs/checkpoints"
   log_dir:      "outputs/logs"
@@ -65,7 +65,7 @@ augmentation:
   coarse_dropout_max_holes: 8
   coarse_dropout_max_height: 32
   coarse_dropout_max_width: 32
-  elastic_alpha: 30
+  elastic_alpha: 50
   elastic_sigma: 5
 
 # ----- Model -----
@@ -81,8 +81,8 @@ model:
 
 # ----- Training -----
 training:
-  epochs: 100
-  batch_size: 4
+  epochs: 200
+  batch_size: 32
   learning_rate: 0.001
   weight_decay: 0.0001
   optimizer: "adamw"
@@ -151,6 +151,16 @@ tta:
 ensemble:
   enabled: true
   top_k: 3                     # average top-K checkpoints by val F1
+
+# ----- Weights & Biases -----
+wandb:
+  enabled: true
+  project: "adv-cv2"
+  entity: null
+  run_name: null
+  tags: []
+  notes: null
+
 
 # ----- Reproducibility -----
 seed: 42

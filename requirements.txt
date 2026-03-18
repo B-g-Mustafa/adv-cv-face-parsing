@@ -9,3 +9,4 @@ scipy>=1.10.0
 scikit-image>=0.21.0
 pydensecrf @ git+https://github.com/lucasb-eyer/pydensecrf.git
 tqdm>=4.65.0
+wandb>=0.17.0

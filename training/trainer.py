@@ -38,11 +38,13 @@ class Trainer:
         loss_fn: nn.Module,
         device: torch.device,
         cfg: Dict[str, Any],
+        wandb_run: Optional[Any] = None,
     ):
         self.model = model.to(device)
         self.loss_fn = loss_fn.to(device)
         self.device = device
         self.cfg = cfg
+        self.wandb_run = wandb_run
         tcfg = cfg.get("training", {})
 
         # Optimizer
@@ -233,7 +235,11 @@ class Trainer:
                 "epoch": epoch,
                 "lr": lr,
                 "train_loss": train_loss["total"],
+                "train_ce": train_loss["ce"],
+                "train_dice": train_loss["dice"],
                 "val_loss": val_loss["total"],
+                "val_ce": val_loss["ce"],
+                "val_dice": val_loss["dice"],
                 "val_submission_f1": val_metrics["submission_f1"],
                 "val_f1": val_metrics["mean_f1"],
                 "val_iou": val_metrics["mean_iou"],
@@ -242,6 +248,27 @@ class Trainer:
                 "time_s": elapsed,
             }
             self.history.append(record)
+
+            if self.wandb_run is not None:
+                self.wandb_run.log(
+                    {
+                        "epoch": epoch,
+                        "lr": lr,
+                        "train/loss_total": train_loss["total"],
+                        "train/loss_ce": train_loss["ce"],
+                        "train/loss_dice": train_loss["dice"],
+                        "val/loss_total": val_loss["total"],
+                        "val/loss_ce": val_loss["ce"],
+                        "val/loss_dice": val_loss["dice"],
+                        "val/submission_f1": val_metrics["submission_f1"],
+                        "val/mean_f1": val_metrics["mean_f1"],
+                        "val/mean_iou": val_metrics["mean_iou"],
+                        "val/mean_dice": val_metrics["mean_dice"],
+                        "val/pixel_accuracy": val_metrics["pixel_accuracy"],
+                        "timing/epoch_seconds": elapsed,
+                    },
+                    step=epoch,
+                )
 
             # CSV
             if csv_writer is None:
@@ -279,6 +306,9 @@ class Trainer:
                 self.epochs_no_improve = 0
                 self._save(epoch, ckpt_metrics, "best.pth")
                 print(f"  ↑ New best F1: {self.best_f1:.4f} — saved best.pth")
+                if self.wandb_run is not None:
+                    self.wandb_run.summary["best_submission_f1"] = self.best_f1
+                    self.wandb_run.summary["best_epoch"] = epoch
             else:
                 self.epochs_no_improve += 1
 
@@ -291,6 +321,8 @@ class Trainer:
                 break
 
         csv_file.close()
+        if self.wandb_run is not None:
+            self.wandb_run.summary["final_best_submission_f1"] = self.best_f1
         print(f"\nTraining complete. Best F1: {self.best_f1:.4f}")
         print(f"Logs saved to {csv_path}")
         return self.history
