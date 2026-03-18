@@ -153,25 +153,25 @@ from PIL import Image
 # Color palette (19 classes)
 PALETTE = np.array([[i, i, i] for i in range(256)])
 PALETTE[:19] = np.array([
-    [0,   0,   0],    # 0  background
-    [204, 0,   0],    # 1  skin
-    [76,  153, 0],    # 2  l_brow
-    [204, 204, 0],    # 3  r_brow
-    [51,  51,  255],  # 4  l_eye
-    [204, 0,   204],  # 5  r_eye
-    [0,   255, 255],  # 6  eye_g
-    [255, 204, 204],  # 7  l_ear
-    [102, 51,  0],    # 8  r_ear
-    [255, 0,   0],    # 9  ear_r
-    [102, 204, 0],    # 10 nose
-    [255, 255, 0],    # 11 mouth
-    [0,   0,   153],  # 12 u_lip
-    [0,   0,   204],  # 13 l_lip
-    [255, 51,  153],  # 14 neck
-    [0,   204, 204],  # 15 neck_l
-    [0,   51,  0],    # 16 cloth
-    [255, 153, 51],   # 17 hair
-    [0,   204, 0],    # 18 hat
+    [0,     0,   0],    # 0  background
+    [204,   0,   0],    # 1  skin
+    [76,  153,   0],    # 2  l_brow
+    [204, 204,   0],    # 3  r_brow
+    [51,   51, 255],    # 4  l_eye
+    [204,   0, 204],    # 5  r_eye
+    [0,   255, 255],    # 6  eye_g
+    [255, 204, 204],    # 7  l_ear
+    [102,  51,   0],    # 8  r_ear
+    [255,   0,   0],    # 9  ear_r
+    [102, 204,   0],    # 10 nose
+    [255, 255,   0],    # 11 mouth
+    [0,     0, 153],    # 12 u_lip
+    [0,   204, 204],    # 13 l_lip
+    [255, 153,  51],    # 14 neck
+    [0,    51,   0],    # 15 neck_l
+    [0,   204,   0],    # 16 cloth
+    [0,     0, 204],    # 17 hair
+    [255,  51, 153],    # 18 hat
 ])
 
 def colorize_mask(mask: np.ndarray) -> Image.Image:
