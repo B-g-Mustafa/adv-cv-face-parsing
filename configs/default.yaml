@@ -53,7 +53,7 @@ preprocessing:
 # ----- Augmentation -----
 augmentation:
   enabled: true
-  horizontal_flip_p: 0.5
+  horizontal_flip_p: 0.0     # CRITICAL: Must be 0. Albumentations doesn't swap 'left' and 'right' mask class IDs when flipping!
   rotate_limit: 15
   scale_limit: 0.1
   shift_limit: 0.05
