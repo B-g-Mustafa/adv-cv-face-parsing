@@ -9,7 +9,7 @@ Usage:
 import argparse
 from pathlib import Path
 
-from utils.helpers import load_config, set_seed, get_device
+from utils.helpers import load_config, set_seed, get_device, colorize_mask
 from models.attention_lite_unet import build_model
 from inference.predict import InferencePipeline
 
@@ -57,13 +57,12 @@ def main():
     if input_path.is_dir():
         pipeline.predict_batch(str(input_path), args.output)
     elif input_path.is_file():
-        import cv2
-        import numpy as np
         mask = pipeline.predict_single(str(input_path))
         out_path = Path(args.output)
         out_path.mkdir(parents=True, exist_ok=True)
         save_file = out_path / f"{input_path.stem}.png"
-        cv2.imwrite(str(save_file), mask.astype(np.uint8))
+        colorized = colorize_mask(mask)
+        colorized.save(str(save_file))
         print(f"Saved mask to {save_file}")
     else:
         print(f"Error: {args.input} not found.")

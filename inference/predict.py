@@ -16,7 +16,7 @@ from preprocessing.transforms import FacePreprocessor
 from postprocessing.pipeline import PostProcessor
 from inference.tta import TTAPredictor
 from inference.ensemble import CheckpointEnsemble
-from utils.helpers import get_device, load_checkpoint, Timer
+from utils.helpers import get_device, load_checkpoint, Timer, colorize_mask
 
 
 class InferencePipeline:
@@ -135,9 +135,10 @@ class InferencePipeline:
         for img_file in image_files:
             with Timer() as t:
                 mask = self.predict_single(str(img_file))
-            # Save mask as grayscale PNG
+            # Save mask using PIL with palette
             save_path = out_path / f"{img_file.stem}.png"
-            cv2.imwrite(str(save_path), mask.astype(np.uint8))
+            colorized = colorize_mask(mask)
+            colorized.save(str(save_path))
             print(f"  {img_file.name} → {save_path.name}  ({t.elapsed:.3f}s)")
 
         print(f"Done. Masks saved to {output_dir}")
