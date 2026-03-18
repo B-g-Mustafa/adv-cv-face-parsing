@@ -13,6 +13,7 @@ EPOCHS = 10
 BATCH_SIZE = 8
 LR = 0.001
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+RESUME_MODEL = "face_parsing_unet_v2.pth"  # Set to None or empty string to train from scratch
 
 def f_measure(preds, targets, num_classes=19):
     """Original Kaggle notebook F1 measure."""
@@ -73,6 +74,14 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     model = SimpleUNet(in_channels=3, out_channels=19).to(DEVICE)
+    
+    # --- RESUME LOGIC ---
+    if RESUME_MODEL and os.path.exists(RESUME_MODEL):
+        print(f"Loading weights from {RESUME_MODEL} to resume training...")
+        model.load_state_dict(torch.load(RESUME_MODEL, map_location=DEVICE))
+    else:
+        print("Training from scratch with random weights...")
+
     criterion = nn.CrossEntropyLoss().to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LR)
 
