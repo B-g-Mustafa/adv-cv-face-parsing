@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 
 from .morphological import MorphologicalPostProcessor
 from .crf_refine import apply_crf
+from .heuristic import SpatialHeuristicFixer
 
 
 class PostProcessor:
@@ -19,7 +20,9 @@ class PostProcessor:
             cfg = {}
         self.cfg = cfg
         self.use_crf = cfg.get("use_crf", False)
+        self.use_heuristic = cfg.get("use_heuristic", True)  # Hack for Left/Right
         self.morph = MorphologicalPostProcessor(cfg)
+        self.heuristic = SpatialHeuristicFixer()
 
     def __call__(
         self,
@@ -49,5 +52,9 @@ class PostProcessor:
 
         # Step 2: Morphological cleanup (operates on integer mask)
         mask = self.morph(mask, num_classes)
+
+        # Step 3: Spatial Heuristic Fixer (Left/Right hack)
+        if self.use_heuristic:
+            mask = self.heuristic(mask)
 
         return mask

@@ -53,7 +53,7 @@ preprocessing:
 # ----- Augmentation -----
 augmentation:
   enabled: true
-  horizontal_flip_p: 0.0     # CRITICAL: Must be 0. Albumentations doesn't swap 'left' and 'right' mask class IDs when flipping!
+  horizontal_flip_p: 0.5     # Re-enabled! The SpatialHeuristicFixer will natively separate the L/R merged predictions during evaluation.
   rotate_limit: 15
   scale_limit: 0.1
   shift_limit: 0.05
@@ -126,6 +126,7 @@ copy_paste:
 
 # ----- Post-processing -----
 postprocessing:
+  use_heuristic: true                # Hack to mathematically split Left/Right features without retraining
   use_morphological: false
   morph_kernel_size: 3
   morph_iterations: 1
