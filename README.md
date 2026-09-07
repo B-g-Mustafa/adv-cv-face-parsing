@@ -16,40 +16,7 @@ A hybrid classical-preprocessing + lightweight-DL + classical-postprocessing pip
 
 ## Pipeline Overview
 
-```
-Input RGB (512×512)
-    │
-    ▼
-┌───────────────────────────────────┐
-│  CLASSICAL PREPROCESSING          │
-│  CLAHE → Bilateral → Sobel Edge  │
-│  → Normalize → 4-channel tensor  │
-└───────────────┬───────────────────┘
-                │
-                ▼
-┌───────────────────────────────────┐
-│  LIGHTWEIGHT DL MODEL             │
-│  AttentionLiteUNet (~1.68M params)│
-│  DS-ResBlocks + ASPP + Att. Gates │
-└───────────────┬───────────────────┘
-                │
-                ▼
-┌───────────────────────────────────┐
-│  INFERENCE BOOSTING               │
-│  TTA (flip/rotation averaging)    │
-│  + Checkpoint Ensemble (top-K)    │
-└───────────────┬───────────────────┘
-                │
-                ▼
-┌───────────────────────────────────┐
-│  CLASSICAL POST-PROCESSING        │
-│  Morph. Open/Close → Hole Fill    │
-│  → CC Filtering → (Optional CRF) │
-└───────────────┬───────────────────┘
-                │
-                ▼
-     19-class mask (512×512)
-```
+<img src="assets/img/pipeline.png" alt="Pipeline Overview">
 
 ---
 
